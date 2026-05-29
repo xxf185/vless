@@ -6,7 +6,7 @@ set -e
 # Author: jinqians
 # =========================================================
 
-SCRIPT_REMOTE_URL="https://raw.githubusercontent.com/jinqians/vless/refs/heads/main/vless.sh"
+SCRIPT_REMOTE_URL="https://raw.githubusercontent.com/xxf185/vless/refs/heads/main/vless.sh"
 
 CONFIG_DIR="/usr/local/etc/xray"
 CONFIG_FILE="$CONFIG_DIR/config.json"
@@ -101,7 +101,7 @@ if [ "$(id -u)" != "0" ]; then
   exit 1
 fi
 TMP=$(mktemp)
-curl -fsSL https://raw.githubusercontent.com/jinqians/vless/refs/heads/main/vless.sh -o "$TMP"
+curl -fsSL https://raw.githubusercontent.com/xxf185/vless/refs/heads/main/vless.sh -o "$TMP"
 bash "$TMP"
 rm -f "$TMP"
 EOFSCRIPT
@@ -137,7 +137,7 @@ install_action() {
   ensure_deps
 
   if ! command -v xray >/dev/null 2>&1; then
-    bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
+    bash <(curl -L https://github.com/xxf185/vless/raw/main/install-release.sh) install
   fi
 
   read -p "监听端口 [443]: " PORT
@@ -242,7 +242,7 @@ show_config_action() {
 # ================= 其它菜单功能 =================
 
 update_action() {
-  bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
+  bash <(curl -L https://github.com/xxf185/vless/raw/main/install-release.sh) install
   systemctl restart xray || true
   xray -version | head -n 3
 }
