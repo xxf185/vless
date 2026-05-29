@@ -373,7 +373,7 @@ get_latest_version() {
   # Get Xray latest release version number
   local tmp_file
   tmp_file="$(mktemp)"
-  local url='https://api.github.com/repos/XTLS/Xray-core/releases/latest'
+  local url='https://api.github.com/repos/xxf185/vless/releases/latest'
   if curl -x "${PROXY}" -sSfLo "$tmp_file" -H "Accept: application/vnd.github.v3+json" "$url"; then
     echo "get release list success"
   else
@@ -387,14 +387,14 @@ get_latest_version() {
       echo "error: github API rate limit exceeded"
     else
       echo "error: Failed to get the latest release version."
-      echo "Welcome bug report:https://github.com/XTLS/Xray-install/issues"
+      echo "Welcome bug report:https://github.com/xxf185/vless/issues"
     fi
     "rm" "$tmp_file"
     exit 1
   fi
   "rm" "$tmp_file"
   RELEASE_LATEST="v${RELEASE_LATEST#v}"
-  url='https://api.github.com/repos/XTLS/Xray-core/releases'
+  url='https://api.github.com/repos/xxf185/vless/releases'
   if curl -x "${PROXY}" -sSfLo "$tmp_file" -H "Accept: application/vnd.github.v3+json" "$url"; then
     echo "get release list success"
   else
@@ -409,7 +409,7 @@ get_latest_version() {
       echo "error: github API rate limit exceeded"
     else
       echo "error: Failed to get the latest release version."
-      echo "Welcome bug report:https://github.com/XTLS/Xray-install/issues"
+      echo "Welcome bug report:https://github.com/xxf185/vless/issues"
     fi
     "rm" "$tmp_file"
     exit 1
@@ -417,7 +417,7 @@ get_latest_version() {
   local i url_zip
   for i in "${!releases_list[@]}"; do
     releases_list["$i"]="v${releases_list[$i]#v}"
-    url_zip="https://github.com/XTLS/Xray-core/releases/download/${releases_list[$i]}/Xray-linux-$MACHINE.zip"
+    url_zip="https://github.com/xxf185/vless/releases/download/${releases_list[$i]}/Xray-linux-$MACHINE.zip"
     if grep -q "$url_zip" "$tmp_file"; then
       PRE_RELEASE_LATEST="${releases_list[$i]}"
       break
@@ -431,7 +431,7 @@ version_gt() {
 }
 
 download_xray() {
-  local DOWNLOAD_LINK="https://github.com/XTLS/Xray-core/releases/download/${INSTALL_VERSION}/Xray-linux-${MACHINE}.zip"
+  local DOWNLOAD_LINK="https://github.com/xxf185/vless/releases/download/${INSTALL_VERSION}/Xray-linux-${MACHINE}.zip"
   echo "Downloading Xray archive: $DOWNLOAD_LINK"
   if curl -f -x "${PROXY}" -R -H 'Cache-Control: no-cache' -o "$ZIP_FILE" "$DOWNLOAD_LINK"; then
     echo "ok."
@@ -537,7 +537,7 @@ install_startup_service_file() {
   cat >/etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
-Documentation=https://github.com/xtls
+Documentation=https://github.com/xxf185
 After=network.target nss-lookup.target
 
 [Service]
@@ -559,7 +559,7 @@ EOF
   cat >/etc/systemd/system/xray@.service <<EOF
 [Unit]
 Description=Xray Service
-Documentation=https://github.com/xtls
+Documentation=https://github.com/xxf185
 After=network.target nss-lookup.target
 
 [Service]
