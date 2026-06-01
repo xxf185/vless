@@ -143,11 +143,11 @@ install_action() {
   read -p "监听端口 [443]: " PORT
   PORT=${PORT:-443}
 
-  read -p "dest [www.cloudflare.com:443]: " DEST
-  DEST=${DEST:-www.cloudflare.com:443}
+  read -p "dest [www.ebay.com:443]: " DEST
+  DEST=${DEST:-www.ebay.com:443}
 
-  read -p "serverNames (逗号) [www.cloudflare.com]: " SERVER_NAMES_RAW
-  SERVER_NAMES_RAW=${SERVER_NAMES_RAW:-www.cloudflare.com}
+  read -p "serverNames (逗号) [www.ebay.com]: " SERVER_NAMES_RAW
+  SERVER_NAMES_RAW=${SERVER_NAMES_RAW:-www.ebay.com}
 
   IFS=',' read -ra SN <<< "$SERVER_NAMES_RAW"
   SERVER_NAMES_JSON=$(printf '"%s",' "${SN[@]}")
