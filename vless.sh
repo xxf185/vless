@@ -115,7 +115,7 @@ output_links() {
   get_ips
 
   if [[ -n "$IPV4" ]]; then
-    V4="vless://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv4"
+    V4="reality://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv4"
     echo "IPv4 链接："
     echo "$V4"
     qrencode -t ANSIUTF8 "$V4"
@@ -123,7 +123,7 @@ output_links() {
   fi
 
   if [[ -n "$IPV6" ]]; then
-    V6="vless://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv6"
+    V6="reality://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv6"
     echo "IPv6 链接："
     echo "$V6"
     qrencode -t ANSIUTF8 "$V6"
@@ -226,13 +226,13 @@ show_config_action() {
 
   if [[ -n "$IPV4" ]]; then
     echo "IPv4 完整链接："
-    echo "vless://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
+    echo "reality://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
     echo
   fi
 
   if [[ -n "$IPV6" ]]; then
     echo "IPv6 完整链接："
-    echo "vless://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
+    echo "reality://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
     echo
   fi
 
@@ -248,7 +248,7 @@ update_action() {
 }
 
 uninstall_action() {
-  read -p "⚠️ 将彻底删除 Xray 与所有配置，是否继续？(y/N): " yn
+  read -p " 将彻底删除 Xray 与所有配置，是否继续？(y/N): " yn
   [[ ! "$yn" =~ ^[Yy]$ ]] && return
 
   systemctl stop xray 2>/dev/null || true
