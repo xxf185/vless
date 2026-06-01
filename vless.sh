@@ -92,9 +92,9 @@ EOF
 # ================= 安装 vless 管理命令 =================
 
 install_vless_cmd() {
-  if [[ -f "$reality_CMD" ]]; then return; fi
+  if [[ -f "$VLESS_CMD" ]]; then return; fi
 
-  cat > "$reality_CMD" << 'EOFSCRIPT'
+  cat > "$VLESS_CMD" << 'EOFSCRIPT'
 #!/bin/bash
 if [ "$(id -u)" != "0" ]; then
   echo "请以 root 运行 vless"
@@ -106,7 +106,7 @@ bash "$TMP"
 rm -f "$TMP"
 EOFSCRIPT
 
-  chmod +x "$reality_CMD"
+  chmod +x "$VLESS_CMD"
 }
 
 # ================= 输出链接 =================
@@ -115,7 +115,7 @@ output_links() {
   get_ips
 
   if [[ -n "$IPV4" ]]; then
-    V4="reality://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv4"
+    V4="vless://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv4"
     echo "IPv4 链接："
     echo "$V4"
     qrencode -t ANSIUTF8 "$V4"
@@ -123,7 +123,7 @@ output_links() {
   fi
 
   if [[ -n "$IPV6" ]]; then
-    V6="reality://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv6"
+    V6="vless://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv6"
     echo "IPv6 链接："
     echo "$V6"
     qrencode -t ANSIUTF8 "$V6"
@@ -143,11 +143,11 @@ install_action() {
   read -p "监听端口 [443]: " PORT
   PORT=${PORT:-443}
 
-  read -p "dest [www.ebay.com:443]: " DEST
-  DEST=${DEST:-www.ebay.com:443}
+  read -p "dest [www.cloudflare.com:443]: " DEST
+  DEST=${DEST:-www.cloudflare.com:443}
 
-  read -p "serverNames (逗号) [www.ebay.com]: " SERVER_NAMES_RAW
-  SERVER_NAMES_RAW=${SERVER_NAMES_RAW:-www.ebay.com}
+  read -p "serverNames (逗号) [www.cloudflare.com]: " SERVER_NAMES_RAW
+  SERVER_NAMES_RAW=${SERVER_NAMES_RAW:-www.cloudflare.com}
 
   IFS=',' read -ra SN <<< "$SERVER_NAMES_RAW"
   SERVER_NAMES_JSON=$(printf '"%s",' "${SN[@]}")
@@ -226,13 +226,13 @@ show_config_action() {
 
   if [[ -n "$IPV4" ]]; then
     echo "IPv4 完整链接："
-    echo "reality://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
+    echo "vless://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
     echo
   fi
 
   if [[ -n "$IPV6" ]]; then
     echo "IPv6 完整链接："
-    echo "reality://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
+    echo "vless://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
     echo
   fi
 
@@ -248,7 +248,7 @@ update_action() {
 }
 
 uninstall_action() {
-  read -p " 将彻底删除 Xray 与所有配置，是否继续？(y/N): " yn
+  read -p "⚠️ 将彻底删除 Xray 与所有配置，是否继续？(y/N): " yn
   [[ ! "$yn" =~ ^[Yy]$ ]] && return
 
   systemctl stop xray 2>/dev/null || true
@@ -261,7 +261,7 @@ uninstall_action() {
 
   rm -rf /usr/local/etc/xray /etc/xray /usr/local/etc/xray-reality /etc/xray-reality
   rm -f /usr/local/bin/xray /usr/bin/xray /bin/xray
-  rm -f "$reality_CMD"
+  rm -f "$VLESS_CMD"
 
   systemctl daemon-reexec
   systemctl daemon-reload
