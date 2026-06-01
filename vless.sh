@@ -3,7 +3,7 @@ set -e
 
 # =========================================================
 # VLESS Reality 一键菜单脚本（终极完整版）
-# Author: jinqians
+# Author: xxf185
 # =========================================================
 
 SCRIPT_REMOTE_URL="https://raw.githubusercontent.com/xxf185/vless/refs/heads/main/vless.sh"
