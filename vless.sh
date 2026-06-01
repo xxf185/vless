@@ -115,7 +115,7 @@ output_links() {
   get_ips
 
   if [[ -n "$IPV4" ]]; then
-    V4="vless://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv4"
+    V4="vless://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
     echo "IPv4 链接："
     echo "$V4"
     qrencode -t ANSIUTF8 "$V4"
@@ -123,7 +123,7 @@ output_links() {
   fi
 
   if [[ -n "$IPV6" ]]; then
-    V6="vless://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality-IPv6"
+    V6="vless://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
     echo "IPv6 链接："
     echo "$V6"
     qrencode -t ANSIUTF8 "$V6"
