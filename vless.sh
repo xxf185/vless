@@ -92,9 +92,9 @@ EOF
 # ================= 安装 vless 管理命令 =================
 
 install_vless_cmd() {
-  if [[ -f "$VLESS_CMD" ]]; then return; fi
+  if [[ -f "$reality_CMD" ]]; then return; fi
 
-  cat > "$VLESS_CMD" << 'EOFSCRIPT'
+  cat > "$reality_CMD" << 'EOFSCRIPT'
 #!/bin/bash
 if [ "$(id -u)" != "0" ]; then
   echo "请以 root 运行 vless"
@@ -106,7 +106,7 @@ bash "$TMP"
 rm -f "$TMP"
 EOFSCRIPT
 
-  chmod +x "$VLESS_CMD"
+  chmod +x "$reality_CMD"
 }
 
 # ================= 输出链接 =================
@@ -261,7 +261,7 @@ uninstall_action() {
 
   rm -rf /usr/local/etc/xray /etc/xray /usr/local/etc/xray-reality /etc/xray-reality
   rm -f /usr/local/bin/xray /usr/bin/xray /bin/xray
-  rm -f "$VLESS_CMD"
+  rm -f "$reality_CMD"
 
   systemctl daemon-reexec
   systemctl daemon-reload
