@@ -288,49 +288,7 @@ ensure_packages() {
     curl unzip openssl netcat-openbsd qrencode ufw fail2ban jq \
     unattended-upgrades ca-certificates python3 >> "$LOG_FILE" 2>&1
   echo -e "${GREEN}  ✓ Packages 已安装 ${NC}"
-}
 
-setup_ufw() {
-  local vpn_port="$1"
-  echo -e "${YELLOW}▶ 正在配置 UFW...${NC}"
-  [ -f /etc/default/ufw ] && sed -i 's/^IPV6=no/IPV6=yes/' /etc/default/ufw
-  ufw default deny incoming  >/dev/null 2>&1
-  ufw default allow outgoing >/dev/null 2>&1
-  ufw allow 22/tcp comment 'SSH' >/dev/null 2>&1
-  ufw allow "${vpn_port}/tcp" comment 'VLESS-Reality' >/dev/null 2>&1
-  ufw --force enable >/dev/null 2>&1
-  echo -e "${GREEN}  ✓ UFW active  (SSH: 22,  VPN: ${vpn_port})${NC}"
-}
-
-cleanup_old_ufw_vpn() {
-  local new_port="$1"
-  ufw status numbered 2>/dev/null | grep 'VLESS-Reality' | grep -oP '\d+(?=/tcp)' | while read -r rule_port; do
-    if [ "$rule_port" != "$new_port" ]; then
-      ufw delete allow "${rule_port}/tcp" >/dev/null 2>&1 || true
-    fi
-  done
-}
-
-setup_fail2ban() {
-  echo -e "${YELLOW}▶ 正在配置 Fail2Ban...${NC}"
-  cat > /etc/fail2ban/jail.local <<'EOF'
-[DEFAULT]
-bantime  = 3600
-findtime = 600
-maxretry = 3
-ignoreip = 127.0.0.1/8
-
-[sshd]
-enabled  = true
-port     = 22
-logpath  = %(sshd_log)s
-backend  = systemd
-maxretry = 3
-bantime  = 86400
-EOF
-  systemctl enable fail2ban  >/dev/null 2>&1 || true
-  systemctl restart fail2ban >/dev/null 2>&1 || true
-  echo -e "${GREEN}  ✓ Fail2Ban 已激活${NC}"
 }
 
 setup_auto_updates() {
@@ -613,8 +571,6 @@ do_install() {
   echo -e "${GREEN}  ▸ VPN port   : ${PORT}${NC}"
 
   ensure_packages    || return 1
-  setup_ufw "$PORT"  || return 1
-  setup_fail2ban     || return 1
   setup_auto_updates || return 1
   setup_sysctl       || return 1
   install_xray       || return 1
@@ -660,7 +616,7 @@ do_install() {
   echo -e "${GREEN}  ✓ Xray运行中 ${PORT}${NC}"
 
   local link
-  link="$(make_link "$UUID" "MyVPN")" || return 1
+  link="$(make_link "$UUID" "reality")" || return 1
   save_info_file "$link"
   print_result "$link"
   log "INSTALL OK  ip=${SERVER_IP} port=${PORT}"
@@ -725,7 +681,7 @@ do_regenerate_keys() {
 
 do_uninstall() {
   echo ""
-  echo -e "${RED}这将彻底移除 Xray、配置和防火墙.${NC}"
+  echo -e "${RED}移除 Xray${NC}"
   read -rp "$(echo -e "${YELLOW}确认继续? [y/N]: ${NC}")" confirm
   [[ "${confirm,,}" != "y" ]] && { echo "取消."; return 0; }
 
@@ -740,19 +696,6 @@ do_uninstall() {
   bash <(curl -Ls https://raw.githubusercontent.com/xxf185/vless/refs/heads/main/install-release.sh) remove >> "$LOG_FILE" 2>&1 || true
 
   rm -f "$CONFIG" "$INFO_FILE" "$STATE_FILE"
-
-  echo -e "${YELLOW}▶ 移除 UFW rules...${NC}"
-  ufw status numbered 2>/dev/null | grep 'VLESS-Reality' | grep -oP '\d+(?=/tcp)' | sort -rn | while read -r p; do
-    ufw delete allow "${p}/tcp" >/dev/null 2>&1 || true
-  done
-
-  echo -e "${YELLOW}▶ 移除 sysctl 配置${NC}"
-  sed -i '/# --- vless-setup-start ---/,/# --- vless-setup-end ---/d' /etc/sysctl.conf
-  sysctl -p >/dev/null 2>&1 || true
-
-  echo -e "${YELLOW}▶ 移除  fail2ban 配置...${NC}"
-  rm -f /etc/fail2ban/jail.local
-  systemctl restart fail2ban 2>/dev/null || true
 
   echo ""
   echo -e "${GREEN}卸载完成${NC}"
