@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ═══════════════════════════════════════════════════════════════
-#              VLESS + XTLS-Reality AUTO-SETUP
+#                    VLESS-Reality  
 # ═══════════════════════════════════════════════════════════════
 
 set -uo pipefail
@@ -36,11 +36,11 @@ SHORT_ID=""
 
 # ── Root & OS check ──────────────────────────────────────────
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-  echo -e "${RED}Run as root: sudo bash $(basename "$0")${NC}"
+  echo -e "${RED}以 root 用户身份运行 ${NC}"
   exit 1
 fi
 if [ ! -f /etc/debian_version ]; then
-  echo -e "${RED}Only Debian / Ubuntu are supported.${NC}"
+  echo -e "${RED}仅支持 Debian / Ubuntu 系统.${NC}"
   exit 1
 fi
 
@@ -53,7 +53,7 @@ log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG_FILE"; }
 print_header() {
   echo ""
   echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║         VLESS + Reality — Management Menu        ║${NC}"
+  echo -e "${CYAN}║           VLESS—Reality              管理菜单      ║${NC}"
   echo -e "${CYAN}╚═══════════════════════════════════════════════════╝${NC}"
 }
 
