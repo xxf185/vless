@@ -53,7 +53,7 @@ log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG_FILE"; }
 print_header() {
   echo ""
   echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║           VLESS—Reality              管理菜单      ║${NC}"
+  echo -e "${CYAN}║           VLESS—Reality              管理菜单     ║${NC}"
   echo -e "${CYAN}╚═══════════════════════════════════════════════════╝${NC}"
 }
 
