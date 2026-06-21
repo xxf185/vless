@@ -312,7 +312,7 @@ cleanup_old_ufw_vpn() {
 }
 
 setup_fail2ban() {
-  echo -e "${YELLOW}▶ Configuring Fail2Ban...${NC}"
+  echo -e "${YELLOW}▶ 正在配置 Fail2Ban...${NC}"
   cat > /etc/fail2ban/jail.local <<'EOF'
 [DEFAULT]
 bantime  = 3600
@@ -330,7 +330,7 @@ bantime  = 86400
 EOF
   systemctl enable fail2ban  >/dev/null 2>&1 || true
   systemctl restart fail2ban >/dev/null 2>&1 || true
-  echo -e "${GREEN}  ✓ Fail2Ban active${NC}"
+  echo -e "${GREEN}  ✓ Fail2Ban 已激活${NC}"
 }
 
 setup_auto_updates() {
@@ -344,7 +344,7 @@ EOF
 }
 
 setup_sysctl() {
-  echo -e "${YELLOW}▶ 系统优化中...${NC}"
+  echo -e "${YELLOW}▶ 内核优化中...${NC}"
   sed -i '/# --- vless-setup-start ---/,/# --- vless-setup-end ---/d' /etc/sysctl.conf
   cat >> /etc/sysctl.conf <<'EOF'
 
@@ -367,7 +367,7 @@ net.ipv4.tcp_wmem = 4096 65536 16777216
 # --- vless-setup-end ---
 EOF
   sysctl -p >/dev/null 2>&1 || true
-  echo -e "${GREEN}  ✓ 内核强化 + BBR 启用${NC}"
+  echo -e "${GREEN}  ✓ 内核优化+ BBR 启用${NC}"
 }
 
 install_xray() {
@@ -533,7 +533,7 @@ print_result() {
 
   echo ""
   echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║                 reality 配置信息                   ║${NC}"
+  echo -e "${CYAN}║                 reality 配置信息                  ║${NC}"
   echo -e "${CYAN}╚═══════════════════════════════════════════════════╝${NC}"
   echo ""
   echo -e "  ${BOLD}Server${NC}     : ${SERVER_IP}"
@@ -561,7 +561,7 @@ print_result() {
 do_install() {
   echo ""
   echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║       安装并启动 VLESS Reality                     ║${NC}"
+  echo -e "${CYAN}║       安装并启动 VLESS Reality                    ║${NC}"
   echo -e "${CYAN}╚═══════════════════════════════════════════════════╝${NC}"
 
   : > "$LOG_FILE"
@@ -794,5 +794,5 @@ while true; do
   esac
 
   echo ""
-  read -rp "$(echo -e "${CYAN} 继续...${NC}")" _
+  read -rp "$(echo -e "${CYAN}  ${NC}")" _
 done
