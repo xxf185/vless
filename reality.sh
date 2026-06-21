@@ -768,7 +768,7 @@ while true; do
 
   if systemctl is-active --quiet xray 2>/dev/null; then
     local_port="$(json_val '.inbounds[0].port' 2>/dev/null || echo '?')"
-    echo -e "   状态 : ${GREEN}● 运行${NC}  (port ${local_port})"
+    echo -e "   状态 : ${GREEN}● 运行${NC}  "
   elif xray_installed; then
     echo -e "   状态 : ${RED}● 停止${NC}"
   else
