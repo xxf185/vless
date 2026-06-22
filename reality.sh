@@ -1,386 +1,70 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -e
 
-# ═══════════════════════════════════════════════════════════════
-#                    VLESS-Reality  
-# ═══════════════════════════════════════════════════════════════
+# =========================================================
+# VLESS Reality 一键菜单脚本（终极完整版）
+# Author: xxf185
+# =========================================================
 
-set -uo pipefail
+SCRIPT_REMOTE_URL="https://raw.githubusercontent.com/xxf185/vless/refs/heads/main/vless.sh"
 
-# ── Colors ────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
+CONFIG_DIR="/usr/local/etc/xray"
+CONFIG_FILE="$CONFIG_DIR/config.json"
+META_FILE="$CONFIG_DIR/vless-meta.conf"
+VLESS_CMD="/usr/local/bin/vless"
 
-# ── Paths & defaults ─────────────────────────────────────────
-CONFIG="/usr/local/etc/xray/config.json"
-STATE_FILE="/root/.vless-state"
-INFO_FILE="/root/vpn-info.txt"
-LOG_FILE="/root/setup.log"
-XRAY_CMD=""
-SELF_PATH="$(realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "$0")"
-DEFAULT_PORT=443
-PORT_MIN=47000
-PORT_MAX=60000
-
-# ── Variables (filled at runtime) ─────────────────────────────
-SERVER_IP=""
-PORT=""
-UUID=""
-TARGET=""
-PRIVATE_KEY=""
-PUBLIC_KEY=""
-SHORT_ID=""
-
-# ── Root & OS check ──────────────────────────────────────────
-if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-  echo -e "${RED}以 root 用户身份运行 ${NC}"
-  exit 1
-fi
-if [ ! -f /etc/debian_version ]; then
-  echo -e "${RED}仅支持 Debian / Ubuntu 系统.${NC}"
+# root 校验
+if [[ $EUID -ne 0 ]]; then
+  echo "请使用 root 运行此脚本"
   exit 1
 fi
 
-# ══════════════════════════════════════════════════════════════
-#   HELPERS
-# ══════════════════════════════════════════════════════════════
+# ================= 基础工具函数 =================
 
-log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG_FILE"; }
-
-print_header() {
-  echo ""
-  echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║           VLESS—Reality              管理菜单     ║${NC}"
-  echo -e "${CYAN}╚═══════════════════════════════════════════════════╝${NC}"
+ensure_deps() {
+  apt update -y
+  apt install -y curl qrencode || true
 }
 
-xray_installed() {
-  command -v xray >/dev/null 2>&1 || [ -x "/usr/local/bin/xray" ]
+get_ips() {
+  IPV4=$(curl -4 -s https://api.ipify.org || true)
+  IPV6=$(curl -6 -s https://api64.ipify.org || true)
 }
 
-refresh_xray_cmd() {
-  XRAY_CMD="$(command -v xray 2>/dev/null || echo /usr/local/bin/xray)"
-}
+# ================= Reality Key 解析 =================
 
-get_public_ip() {
-  local ip=""
-  ip=$(curl -4 -s --max-time 5 https://api.ipify.org 2>/dev/null) \
-    || ip=$(curl -4 -s --max-time 5 https://ifconfig.me 2>/dev/null) \
-    || ip=$(curl -4 -s --max-time 5 https://icanhazip.com 2>/dev/null) \
-    || ip=""
-  echo "$ip" | tr -d '[:space:]'
-}
+parse_x25519() {
+  KEY_OUTPUT=$(xray x25519 2>&1)
 
-random_port() {
-  local port
-  port=$(shuf -i "${PORT_MIN}-${PORT_MAX}" -n1)
-  while ss -ltnp 2>/dev/null | grep -q ":${port} "; do
-    port=$(shuf -i "${PORT_MIN}-${PORT_MAX}" -n1)
-  done
-  echo "$port"
-}
+  PRIVATE_KEY=$(echo "$KEY_OUTPUT" | grep -i 'private' | awk -F': *' '{print $2}' | head -n1)
+  PUBLIC_KEY=$(echo "$KEY_OUTPUT" | grep -i 'public' | awk -F': *' '{print $2}' | head -n1)
 
-wait_xray_active() {
-  local i
-  for i in $(seq 1 15); do
-    systemctl is-active --quiet xray && return 0
-    sleep 1
-  done
-  return 1
-}
-
-wait_xray_stopped() {
-  local i
-  for i in $(seq 1 15); do
-    systemctl is-active --quiet xray || return 0
-    sleep 1
-  done
-  return 1
-}
-
-wait_port_listening() {
-  local port="$1" i
-  for i in $(seq 1 10); do
-    if ss -ltnp 2>/dev/null | grep -q ":${port} "; then
-      return 0
-    fi
-    sleep 1
-  done
-  return 1
-}
-
-# ── JSON helper (jq first, python3 fallback) ──────────────────
-json_val() {
-  local jpath="$1"
-  if command -v jq >/dev/null 2>&1; then
-    jq -r "$jpath" "$CONFIG" 2>/dev/null
-  else
-    python3 -c "
-import json
-with open('$CONFIG') as f:
-    d = json.load(f)
-path = '$jpath'.lstrip('.').replace('][','|').replace('[','|').replace(']','').split('|')
-ref = d
-for p in path:
-    if p.isdigit():
-        ref = ref[int(p)]
-    else:
-        ref = ref[p]
-print(ref)
-" 2>/dev/null
+  if [[ -z "$PUBLIC_KEY" ]]; then
+    PUBLIC_KEY=$(echo "$KEY_OUTPUT" | grep -i 'password' | awk -F': *' '{print $2}' | head -n1)
   fi
-}
-
-# ══════════════════════════════════════════════════════════════
-#   STATE MANAGEMENT
-#   Instead of re-deriving public key every time (fragile),
-#   we save all connection params to a state file.
-# ══════════════════════════════════════════════════════════════
-
-save_state() {
-  cat > "$STATE_FILE" <<EOF
-PORT=${PORT}
-UUID=${UUID}
-TARGET=${TARGET}
-PRIVATE_KEY=${PRIVATE_KEY}
-PUBLIC_KEY=${PUBLIC_KEY}
-SHORT_ID=${SHORT_ID}
-EOF
-  chmod 600 "$STATE_FILE"
-}
-
-load_state() {
-  if [ -f "$STATE_FILE" ]; then
-    # shellcheck disable=SC1090
-    source "$STATE_FILE"
-    return 0
-  fi
-  return 1
-}
-
-get_server_info() {
-  SERVER_IP="$(get_public_ip)"
-
-  # Try state file first (reliable)
-  if load_state; then
-    return 0
+  if [[ -z "$PUBLIC_KEY" ]]; then
+    PUBLIC_KEY=$(echo "$KEY_OUTPUT" | grep -i 'hash32' | awk -F': *' '{print $2}' | head -n1)
   fi
 
-  # Fallback: parse from config (for upgrades from old script)
-  if [ -f "$CONFIG" ]; then
-    PORT="$(json_val '.inbounds[0].port')" || PORT=""
-    UUID="$(json_val '.inbounds[0].settings.clients[0].id')" || UUID=""
-    TARGET="$(json_val '.inbounds[0].streamSettings.realitySettings.serverNames[0]')" || TARGET=""
-    PRIVATE_KEY="$(json_val '.inbounds[0].streamSettings.realitySettings.privateKey')" || PRIVATE_KEY=""
-
-    # Get first non-empty shortId
-    SHORT_ID="$(json_val '.inbounds[0].streamSettings.realitySettings.shortIds[0]')" || SHORT_ID=""
-    if [ -z "$SHORT_ID" ]; then
-      SHORT_ID="$(json_val '.inbounds[0].streamSettings.realitySettings.shortIds[1]')" || SHORT_ID=""
-    fi
-
-    # Try to derive public key
-    if [ -n "$PRIVATE_KEY" ]; then
-      refresh_xray_cmd
-      local raw
-      raw="$("$XRAY_CMD" x25519 -i "$PRIVATE_KEY" 2>/dev/null || true)"
-      PUBLIC_KEY="$(echo "$raw" | tail -1 | awk '{print $NF}' | tr -d '[:space:]')"
-      log "Fallback derive: raw=$raw  result=$PUBLIC_KEY"
-    fi
-
-    # Save state for future use
-    if [ -n "$PUBLIC_KEY" ] && [ -n "$UUID" ]; then
-      save_state
-    fi
-  fi
+  echo "$KEY_OUTPUT" > /tmp/x25519-raw.txt
 }
 
-make_link() {
-  local uuid="${1}" label="${2:-MyVPN}"
+# ================= 写入 Xray 配置 =================
 
-  if [ -z "${PUBLIC_KEY:-}" ]; then
-    echo -e "${RED}  ✗ PUBLIC_KEY is empty — cannot generate link.${NC}" >&2
-    echo -e "${RED}    Check ${LOG_FILE} for debug info.${NC}" >&2
-    return 1
-  fi
-  if [ -z "${SHORT_ID:-}" ]; then
-    echo -e "${RED}  ✗ SHORT_ID is empty — cannot generate link.${NC}" >&2
-    return 1
-  fi
-
-  echo "vless://${uuid}@${SERVER_IP}:${PORT}?encryption=none&security=reality&sni=${TARGET}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp&flow=xtls-rprx-vision&headerType=none#reality"
-}
-
-# ══════════════════════════════════════════════════════════════
-#   KEY GENERATION
-# ══════════════════════════════════════════════════════════════
-
-generate_reality_keys() {
-  refresh_xray_cmd
-
-  local raw_output=""
-  raw_output="$("$XRAY_CMD" x25519 2>&1 || true)"
-
-  log "=== x25519 raw output START ==="
-  log "$raw_output"
-  log "=== x25519 raw output END ==="
-
-  # xray x25519 outputs exactly 2 lines:
-  #   Private key: XXXXX
-  #   Public key: YYYYY
-  # OR:
-  #   PrivateKey: XXXXX
-  #   PublicKey: YYYYY
-  #
-  # Strategy: just take the LAST token on each line.
-
-  local line1 line2
-  line1="$(echo "$raw_output" | head -1)"
-  line2="$(echo "$raw_output" | head -2 | tail -1)"
-
-  PRIVATE_KEY="$(echo "$line1" | awk '{print $NF}' | tr -d '[:space:]')"
-  PUBLIC_KEY="$(echo "$line2" | awk '{print $NF}' | tr -d '[:space:]')"
-
-  log "Parsed PRIVATE_KEY=${PRIVATE_KEY}"
-  log "Parsed PUBLIC_KEY=${PUBLIC_KEY}"
-
-  # Validate: keys should be 43-44 chars of base64url
-  if [ -z "$PRIVATE_KEY" ] || [ ${#PRIVATE_KEY} -lt 40 ]; then
-    echo -e "${RED}  ✗ Private key 无效 (len=${#PRIVATE_KEY}): '${PRIVATE_KEY}'${NC}"
-    echo -e "${RED}  输出:${NC}"
-    echo "$raw_output"
-    return 1
-  fi
-
-  if [ -z "$PUBLIC_KEY" ] || [ ${#PUBLIC_KEY} -lt 40 ]; then
-    echo -e "${YELLOW} Public key 看起来有问题，它源自 private...${NC}"
-    local derive_out
-    derive_out="$("$XRAY_CMD" x25519 -i "$PRIVATE_KEY" 2>&1 || true)"
-    log "Derive output: $derive_out"
-    PUBLIC_KEY="$(echo "$derive_out" | tail -1 | awk '{print $NF}' | tr -d '[:space:]')"
-    log "Derived PUBLIC_KEY=${PUBLIC_KEY}"
-  fi
-
-  if [ -z "$PUBLIC_KEY" ] || [ ${#PUBLIC_KEY} -lt 40 ]; then
-    echo -e "${RED}  ✗ Public key 生成失败。${NC}"
-    echo -e "${RED}  Private key: ${PRIVATE_KEY}${NC}"
-    echo -e "${RED}  输出:${NC}"
-    "$XRAY_CMD" x25519 -i "$PRIVATE_KEY" 2>&1 || true
-    return 1
-  fi
-
-  echo -e "${GREEN}  ✓ Private key: ${PRIVATE_KEY:0:8}...${NC}"
-  echo -e "${GREEN}  ✓ Public key:  ${PUBLIC_KEY:0:8}...${NC}"
-  return 0
-}
-
-# ══════════════════════════════════════════════════════════════
-#   SETUP STEPS
-# ══════════════════════════════════════════════════════════════
-
-ensure_packages() {
-  echo -e "${YELLOW}▶ 安装 packages...${NC}"
-  apt-get update -qq >> "$LOG_FILE" 2>&1
-  apt-get install -y -qq \
-    curl unzip openssl netcat-openbsd qrencode ufw fail2ban jq \
-    unattended-upgrades ca-certificates python3 >> "$LOG_FILE" 2>&1
-  echo -e "${GREEN}  ✓ Packages 已安装 ${NC}"
-
-}
-
-setup_auto_updates() {
-  echo -e "${YELLOW}▶ 启用自动安全更新...${NC}"
-  cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";
-APT::Periodic::AutocleanInterval "7";
-EOF
-  echo -e "${GREEN}  ✓ 自动安全更新已启用${NC}"
-}
-
-setup_sysctl() {
-  echo -e "${YELLOW}▶ 内核优化中...${NC}"
-  sed -i '/# --- vless-setup-start ---/,/# --- vless-setup-end ---/d' /etc/sysctl.conf
-  cat >> /etc/sysctl.conf <<'EOF'
-
-# --- vless-setup-start ---
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv6.conf.all.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.tcp_syncookies = 1
-net.ipv4.tcp_max_syn_backlog = 4096
-net.ipv4.tcp_fin_timeout = 15
-net.ipv4.tcp_tw_reuse = 1
-net.core.default_qdisc = fq
-net.ipv4.tcp_congestion_control = bbr
-net.core.rmem_max = 16777216
-net.core.wmem_max = 16777216
-net.ipv4.tcp_rmem = 4096 87380 16777216
-net.ipv4.tcp_wmem = 4096 65536 16777216
-# --- vless-setup-end ---
-EOF
-  sysctl -p >/dev/null 2>&1 || true
-  echo -e "${GREEN}  ✓ 内核优化+ BBR 启用${NC}"
-}
-
-install_xray() {
-  echo -e "${YELLOW}▶ 安装 Xray-core...${NC}"
-  if bash <(curl -Ls https://raw.githubusercontent.com/xxf185/vless/refs/heads/main/install-release.sh) install >> "$LOG_FILE" 2>&1; then
-    refresh_xray_cmd
-    if xray_installed; then
-      echo -e "${GREEN}  ✓ Xray 安装成功 ($("$XRAY_CMD" version 2>/dev/null | head -1))${NC}"
-      return 0
-    fi
-  fi
-  echo -e "${RED}  ✗ Xray 安装失败 ${LOG_FILE}${NC}"
-  return 1
-}
-
-pick_target() {
-  echo -e "${YELLOW}▶ 选择SNI${NC}"
-  local targets=(
-    "www.ebay.com"
-    "www.amd.com"
-  )
-  TARGET=""
-  for t in "${targets[@]}"; do
-    if nc -z -w3 "$t" 443 >/dev/null 2>&1; then
-      TARGET="$t"
-      break
-    fi
-  done
-  [ -n "$TARGET" ] || TARGET="www.ebay.com"
-  echo -e "${GREEN}  ✓ SNI target: ${TARGET}${NC}"
-}
-
-write_xray_config() {
-  local port="$1" uuid="$2" target="$3" privkey="$4" sid="$5"
-
-  local sid2 sid3
-  sid2="$(openssl rand -hex 8)"
-  sid3="$(openssl rand -hex 4)"
-
-  mkdir -p "$(dirname "$CONFIG")"
-  cat > "$CONFIG" <<EOF
+write_config() {
+  mkdir -p "$CONFIG_DIR"
+  cat > "$CONFIG_FILE" <<EOF
 {
-  "log": {
-    "loglevel": "warning",
-    "access": "none"
-  },
+  "log": { "loglevel": "warning" },
   "inbounds": [
     {
       "listen": "0.0.0.0",
-      "port": ${port},
+      "port": $PORT,
       "protocol": "vless",
       "settings": {
         "clients": [
           {
-            "id": "${uuid}",
+            "id": "$UUID",
             "flow": "xtls-rprx-vision"
           }
         ],
@@ -390,352 +74,235 @@ write_xray_config() {
         "network": "tcp",
         "security": "reality",
         "realitySettings": {
-          "show": false,
-          "dest": "${target}:443",
-          "serverNames": [
-            "${target}"
-          ],
-          "privateKey": "${privkey}",
-          "shortIds": [
-            "${sid}",
-            "${sid2}",
-            "${sid3}",
-            ""
-          ]
+          "dest": "$DEST",
+          "serverNames": $SERVER_NAMES_JSON,
+          "privateKey": "$PRIVATE_KEY",
+          "shortIds": [""]
         }
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": [
-          "http",
-          "tls",
-          "quic"
-        ]
       }
     }
   ],
   "outbounds": [
-    {
-      "protocol": "freedom",
-      "tag": "direct"
-    },
-    {
-      "protocol": "blackhole",
-      "tag": "block"
-    }
-  ],
-  "routing": {
-    "domainStrategy": "IPIfNonMatch",
-    "rules": [
-      {
-        "type": "field",
-        "ip": [
-          "geoip:private"
-        ],
-        "outboundTag": "block"
-      },
-      {
-        "type": "field",
-        "protocol": [
-          "bittorrent"
-        ],
-        "outboundTag": "block"
-      }
-    ]
-  }
+    { "protocol": "freedom", "tag": "direct" }
+  ]
 }
 EOF
 }
 
-setup_xray_service() {
-  mkdir -p /etc/systemd/system/xray.service.d
-  cat > /etc/systemd/system/xray.service.d/override.conf <<'EOF'
-[Service]
-User=root
-Restart=always
-RestartSec=5
-LimitNOFILE=65535
-EOF
-  systemctl daemon-reload
+# ================= 安装 vless 管理命令 =================
+
+install_vless_cmd() {
+  if [[ -f "$VLESS_CMD" ]]; then return; fi
+
+  cat > "$VLESS_CMD" << 'EOFSCRIPT'
+#!/bin/bash
+if [ "$(id -u)" != "0" ]; then
+  echo "请以 root 运行 vless"
+  exit 1
+fi
+TMP=$(mktemp)
+curl -fsSL https://raw.githubusercontent.com/xxf185/vless/refs/heads/main/vless.sh -o "$TMP"
+bash "$TMP"
+rm -f "$TMP"
+EOFSCRIPT
+
+  chmod +x "$VLESS_CMD"
 }
 
-save_info_file() {
-  local link="$1"
-  cat > "$INFO_FILE" <<EOF
-════════════════════════════════════════════════════════
-  VLESS-Reality 配置信息
-════════════════════════════════════════════════════════
+# ================= 输出链接 =================
 
-Server IP    : ${SERVER_IP}
-VPN Port     : ${PORT}
-UUID         : ${UUID}
-Public Key   : ${PUBLIC_KEY}
-Short ID     : ${SHORT_ID}
-SNI Target   : ${TARGET}
-Fingerprint  : chrome
-Flow         : (none)
-Connections  : unlimited
+output_links() {
+  get_ips
 
-IMPORT LINK:
-${link}
+  if [[ -n "$IPV4" ]]; then
+    V4="vless://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
+    echo "IPv4 链接："
+    echo "$V4"
+    qrencode -t ANSIUTF8 "$V4"
+    echo
+  fi
 
-════════════════════════════════════════════════════════
-Generated : $(date '+%Y-%m-%d %H:%M:%S %Z')
-Manage    : bash ${SELF_PATH}
-════════════════════════════════════════════════════════
-EOF
+  if [[ -n "$IPV6" ]]; then
+    V6="vless://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
+    echo "IPv6 链接："
+    echo "$V6"
+    qrencode -t ANSIUTF8 "$V6"
+    echo
+  fi
 }
 
-print_result() {
-  local link="$1"
+# ================= 安装动作 =================
 
-  echo ""
-  echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║                 reality 配置信息                  ║${NC}"
-  echo -e "${CYAN}╚═══════════════════════════════════════════════════╝${NC}"
-  echo ""
-  echo -e "  ${BOLD}Server${NC}     : ${SERVER_IP}"
-  echo -e "  ${BOLD}Port${NC}       : ${PORT}"
-  echo -e "  ${BOLD}SNI${NC}        : ${TARGET}"
-  echo -e "  ${BOLD}Public Key${NC} : ${PUBLIC_KEY}"
-  echo -e "  ${BOLD}Short ID${NC}   : ${SHORT_ID}"
-  echo ""
-  echo -e "${BOLD}${GREEN}${link}${NC}"
-  echo ""
+install_action() {
+  ensure_deps
 
-  if command -v qrencode >/dev/null 2>&1; then
-    echo -e "${YELLOW}══════════ QR CODE ══════════${NC}"
-    qrencode -t ANSIUTF8 -m 2 "$link"
-    echo -e "${YELLOW}═════════════════════════════${NC}"
+  if ! command -v xray >/dev/null 2>&1; then
+    bash <(curl -L https://github.com/xxf185/vless/raw/main/install-release.sh) install
   fi
 
-  echo ""
-}
+  read -p "监听端口 [443]: " PORT
+  PORT=${PORT:-443}
 
-# ══════════════════════════════════════════════════════════════
-#   ACTIONS
-# ══════════════════════════════════════════════════════════════
+  read -p "dest [www.ebay.com:443]: " DEST
+  DEST=${DEST:-www.ebay.com:443}
 
-do_install() {
-  echo ""
-  echo -e "${CYAN}╔═══════════════════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}║       安装并启动 VLESS Reality                    ║${NC}"
-  echo -e "${CYAN}╚═══════════════════════════════════════════════════╝${NC}"
+  read -p "serverNames (逗号) [www.ebay.com]: " SERVER_NAMES_RAW
+  SERVER_NAMES_RAW=${SERVER_NAMES_RAW:-www.ebay.com}
 
-  : > "$LOG_FILE"
+  IFS=',' read -ra SN <<< "$SERVER_NAMES_RAW"
+  SERVER_NAMES_JSON=$(printf '"%s",' "${SN[@]}")
+  SERVER_NAMES_JSON="[${SERVER_NAMES_JSON%,}]"
+  SERVER_NAME_FIRST=${SN[0]}
 
-  SERVER_IP="$(get_public_ip)"
-  if [ -z "$SERVER_IP" ]; then
-    echo -e "${RED}  ✗ 无法确定服务器公网 IP 地址.${NC}"
-    return 1
+  UUID=$(xray uuid)
+  parse_x25519
+
+  if [[ -z "$PRIVATE_KEY" || -z "$PUBLIC_KEY" ]]; then
+    echo "❌ Reality Key 解析失败"
+    cat /tmp/x25519-raw.txt
+    exit 1
   fi
 
-  # ── Port selection ──────────────────────────────────────
-  echo ""
-  echo -e "${CYAN}  端口选择:${NC}"
-  echo -e "    1) ${BOLD}443${NC}  — 标准 HTTPS (${GREEN}推荐${NC})"
-  echo -e "    2) 随机高端口 (${PORT_MIN}-${PORT_MAX})"
-  echo -e "    3) 输入自定义端口"
-  echo ""
-  read -rp "$(echo -e "${YELLOW}  Choice [1]: ${NC}")" port_choice
+  write_config
 
-  case "${port_choice:-1}" in
-    1|"")
-      PORT="$DEFAULT_PORT"
-      if ss -ltnp 2>/dev/null | grep -q ":${PORT} "; then
-        echo -e "${RED}  ✗ Port 443 is 已在使用中。${NC}"
-        echo -e "${YELLOW}  回退到随机端口...${NC}"
-        PORT="$(random_port)"
-      fi
-      ;;
-    2)
-      PORT="$(random_port)"
-      ;;
-    3)
-      read -rp "$(echo -e "${YELLOW}  请输入端口号: ${NC}")" custom_port
-      if [[ "$custom_port" =~ ^[0-9]+$ ]] && [ "$custom_port" -ge 1 ] && [ "$custom_port" -le 65535 ]; then
-        if ss -ltnp 2>/dev/null | grep -q ":${custom_port} "; then
-          echo -e "${RED}  ✗ Port ${custom_port} 已在使用中.${NC}"
-          return 1
-        fi
-        PORT="$custom_port"
-      else
-        echo -e "${RED}  ✗ 无效端口.${NC}"
-        return 1
-      fi
-      ;;
-    *) PORT="$DEFAULT_PORT" ;;
-  esac
-
-  echo -e "${GREEN}  ▸ Server IP  : ${SERVER_IP}${NC}"
-  echo -e "${GREEN}  ▸ VPN port   : ${PORT}${NC}"
-
-  ensure_packages    || return 1
-  setup_auto_updates || return 1
-  setup_sysctl       || return 1
-  install_xray       || return 1
-
-  echo -e "${YELLOW}▶ 生成 Reality keys...${NC}"
-  if ! generate_reality_keys; then
-    echo -e "${RED}  ✗ 生成 Reality keys失败${NC}"
-    return 1
-  fi
-
-  refresh_xray_cmd
-  UUID="$("$XRAY_CMD" uuid 2>/dev/null | tr -d '[:space:]')"
-  if [ -z "$UUID" ]; then
-    echo -e "${RED}  ✗ UUID 生成失败.${NC}"
-    return 1
-  fi
-
-  SHORT_ID="$(openssl rand -hex 8)"
-
-  pick_target
-  write_xray_config "$PORT" "$UUID" "$TARGET" "$PRIVATE_KEY" "$SHORT_ID"
-  setup_xray_service
-
-  # Save state BEFORE starting (so we have the keys even if start fails)
-  save_state
-
-  echo -e "${YELLOW}▶ 启动Xray...${NC}"
-  systemctl enable xray >/dev/null 2>&1 || true
+  systemctl enable xray
   systemctl restart xray
 
-  if ! wait_xray_active; then
-    echo -e "${RED}  ✗ Xray 启动失败{NC}"
-    journalctl -u xray -n 30 --no-pager
-    return 1
-  fi
+  # ===== 保存 Reality 元信息（关键）=====
+  get_ips
+  cat > "$META_FILE" <<EOF
+UUID="$UUID"
+PUBLIC_KEY="$PUBLIC_KEY"
+PORT="$PORT"
+DEST="$DEST"
+SERVER_NAMES="$SERVER_NAMES_RAW"
+SERVER_NAME_FIRST="$SERVER_NAME_FIRST"
+IPV4="$IPV4"
+IPV6="$IPV6"
+INSTALL_TIME="$(date '+%Y-%m-%d %H:%M:%S')"
+EOF
 
-  if ! wait_port_listening "$PORT"; then
-    echo -e "${RED}  ✗ Port ${PORT} 10秒后就没再听了.${NC}"
-    journalctl -u xray -n 30 --no-pager
-    return 1
-  fi
+  install_vless_cmd
 
-  echo -e "${GREEN}  ✓ Xray运行中 ${PORT}${NC}"
+  echo
+  echo "=========== 安装完成 ==========="
+  echo "UUID       : $UUID"
+  echo "PublicKey  : $PUBLIC_KEY"
+  echo "端口       : $PORT"
+  echo "dest       : $DEST"
+  echo "serverNames: $SERVER_NAMES_RAW"
+  echo
+  echo "👉 后续管理请直接执行命令： vless"
+  echo
 
-  local link
-  link="$(make_link "$UUID" "reality")" || return 1
-  save_info_file "$link"
-  print_result "$link"
-  log "INSTALL OK  ip=${SERVER_IP} port=${PORT}"
+  output_links
+
+  echo "✅ 安装完成，脚本已退出"
+  exit 0
 }
 
-do_show_link() {
-  if [ ! -f "$STATE_FILE" ] && [ ! -f "$CONFIG" ]; then
-    echo -e "${RED}未安装${NC}"
-    return 1
+# ================= 查看配置 =================
+
+show_config_action() {
+  if [[ ! -f "$META_FILE" ]]; then
+    echo "❌ 未找到节点元信息文件：$META_FILE"
+    return
   fi
 
-  get_server_info
+  source "$META_FILE"
 
-  local link
-  link="$(make_link "$UUID" "reality")" || return 1
-  print_result "$link"
+  echo
+  echo "=========== 当前 VLESS Reality 配置 ==========="
+  echo "安装时间 : $INSTALL_TIME"
+  echo "UUID     : $UUID"
+  echo "PublicKey: $PUBLIC_KEY"
+  echo "端口     : $PORT"
+  echo "dest     : $DEST"
+  echo "serverNames:"
+  echo "$SERVER_NAMES" | tr ',' '\n' | sed 's/^/  - /'
+  echo
+
+  get_ips
+
+  if [[ -n "$IPV4" ]]; then
+    echo "IPv4 完整链接："
+    echo "vless://${UUID}@${IPV4}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
+    echo
+  fi
+
+  if [[ -n "$IPV6" ]]; then
+    echo "IPv6 完整链接："
+    echo "vless://${UUID}@[$IPV6]:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${SERVER_NAME_FIRST}&fp=chrome&pbk=${PUBLIC_KEY}&type=tcp#vless-reality"
+    echo
+  fi
+
+  read -p "按 Enter 返回菜单..."
 }
 
-do_regenerate_keys() {
-  if [ ! -f "$CONFIG" ]; then
-    echo -e "${RED}未安装${NC}"
-    return 1
-  fi
+# ================= 其它菜单功能 =================
 
-  echo -e "${YELLOW}这将生成新的 UUID + Reality keys.${NC}"
-  echo -e "${YELLOW}所有客户都需要这个新链接。.${NC}"
-  read -rp "$(echo -e "${YELLOW}确认继续? [y/N]: ${NC}")" ans
-  [[ "${ans,,}" != "y" ]] && { echo "取消."; return 0; }
-
-  get_server_info
-  refresh_xray_cmd
-
-  echo -e "${YELLOW}▶ 生成新密钥...${NC}"
-  if ! generate_reality_keys; then
-    echo -e "${RED}  ✗ 生成新密钥失败.${NC}"
-    return 1
-  fi
-
-  UUID="$("$XRAY_CMD" uuid 2>/dev/null | tr -d '[:space:]')"
-  SHORT_ID="$(openssl rand -hex 8)"
-
-  write_xray_config "$PORT" "$UUID" "$TARGET" "$PRIVATE_KEY" "$SHORT_ID"
-  save_state
-
-  echo -e "${YELLOW}▶ 重启 Xray...${NC}"
-  systemctl restart xray
-
-  if ! wait_xray_active; then
-    echo -e "${RED}  ✗ 启动 Xray 失败.${NC}"
-    journalctl -u xray -n 20 --no-pager
-    return 1
-  fi
-
-  echo -e "${GREEN}  ✓ 重新生成密钥，重新启动 Xray.${NC}"
-
-  local link
-  link="$(make_link "$UUID" "reality")" || return 1
-  save_info_file "$link"
-  print_result "$link"
-  log "REGEN KEYS  port=${PORT}"
+update_action() {
+  bash <(curl -L https://github.com/xxf185/vless/raw/main/install-release.sh) install
+  systemctl restart xray || true
+  xray -version | head -n 3
 }
 
-do_uninstall() {
-  echo ""
-  echo -e "${RED}移除 Xray${NC}"
-  read -rp "$(echo -e "${YELLOW}确认继续? [y/N]: ${NC}")" confirm
-  [[ "${confirm,,}" != "y" ]] && { echo "取消."; return 0; }
+uninstall_action() {
+  read -p "⚠️ 将彻底删除 Xray 与所有配置，是否继续？(y/N): " yn
+  [[ ! "$yn" =~ ^[Yy]$ ]] && return
 
-  echo -e "${YELLOW}▶ 停止 & 禁用 Xray...${NC}"
-  systemctl stop xray    2>/dev/null || true
+  systemctl stop xray 2>/dev/null || true
   systemctl disable xray 2>/dev/null || true
+  pkill -9 xray 2>/dev/null || true
 
-  rm -rf /etc/systemd/system/xray.service.d
+  rm -f /etc/systemd/system/xray.service
+  rm -f /etc/systemd/system/xray@.service
+  rm -rf /etc/systemd/system/xray*.d
+
+  rm -rf /usr/local/etc/xray /etc/xray /usr/local/etc/xray-reality /etc/xray-reality
+  rm -f /usr/local/bin/xray /usr/bin/xray /bin/xray
+  rm -f "$VLESS_CMD"
+
+  systemctl daemon-reexec
   systemctl daemon-reload
 
-  echo -e "${YELLOW}▶ 卸载Xray ...${NC}"
-  bash <(curl -Ls https://raw.githubusercontent.com/xxf185/vless/refs/heads/main/install-release.sh) remove >> "$LOG_FILE" 2>&1 || true
-
-  rm -f "$CONFIG" "$INFO_FILE" "$STATE_FILE"
-
-  echo ""
-  echo -e "${GREEN}卸载完成${NC}"
-  echo ""
+  echo "✅ 已彻底卸载 VLESS Reality"
 }
 
-# ══════════════════════════════════════════════════════════════
-#   MAIN MENU
-# ══════════════════════════════════════════════════════════════
+status_action() {
+  systemctl status xray --no-pager || true
+  ss -lntp || true
+}
+
+self_update() {
+  curl -fsSL "$SCRIPT_REMOTE_URL" -o /tmp/vless-menu.sh
+  chmod +x /tmp/vless-menu.sh
+  cp /tmp/vless-menu.sh "$0"
+  exec bash "$0"
+}
+
+# ================= 主菜单 =================
 
 while true; do
-  print_header
-
-  if systemctl is-active --quiet xray 2>/dev/null; then
-    local_port="$(json_val '.inbounds[0].port' 2>/dev/null || echo '?')"
-    echo -e "   状态 : ${GREEN}● 运行${NC}  "
-  elif xray_installed; then
-    echo -e "   状态 : ${RED}● 停止${NC}"
-  else
-    echo -e "   状态 : ${YELLOW}● 未安装${NC}"
-  fi
-
-  echo ""
-  echo "   1)  安装reality"
-  echo "   2)  查看配置"
-  echo "   3)  更改keys"
-  echo "   4)  卸载"
-  echo "   0)  退出"
-  echo ""
-  read -rp "$(echo -e "${YELLOW}  选项 [0-4]: ${NC}")" choice
-
-  case "$choice" in
-    1) do_install         ;;
-    2) do_show_link       ;;
-    3) do_regenerate_keys ;;
-    4) do_uninstall       ;;
-    0) echo ""; exit 0 ;;
-    *) echo -e "${RED}未知选项${NC}" ;;
+  echo "============================================"
+  echo "           vless Reality 管理菜单"
+  echo "============================================"
+  echo "1) 安装 VLESS Reality"
+  echo "2) 更新 Xray"
+  echo "3) 卸载 VLESS Reality"
+  echo "4) 查看运行状态"
+  echo "5) 查看当前配置"
+  echo "0) 更新脚本"
+  echo "q) 退出"
+  read -p "请选择: " c
+  case "$c" in
+    1) install_action ;;
+    2) update_action ;;
+    3) uninstall_action ;;
+    4) status_action ;;
+    5) show_config_action ;;
+    0) self_update ;;
+    q|Q) exit 0 ;;
+    *) echo "无效选项" ;;
   esac
-
-  echo ""
-  read -rp "$(echo -e "${CYAN}  ${NC}")" _
 done
