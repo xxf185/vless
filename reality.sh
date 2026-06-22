@@ -182,7 +182,7 @@ IPV6="$IPV6"
 INSTALL_TIME="$(date '+%Y-%m-%d %H:%M:%S')"
 EOF
 
-  install_vless_cmd
+  install_reality_cmd
 
   echo
   echo "=========== 安装完成 ==========="
