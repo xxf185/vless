@@ -6,7 +6,7 @@ set -euo pipefail
 # https://wiki.linuxfoundation.org/lsb/fhs
 
 # The URL of the script project is:
-# https://github.com/XTLS/Xray-install
+# https://github.com/xxf185/vless
 
 # The URL of the script is:
 # https://raw.githubusercontent.com/xxf185/vless/refs/heads/main/install-release.sh
@@ -846,8 +846,8 @@ update_geodata() {
   }
   local file_ip='geoip-full.dat'
   local file_site='geosite-expand.dat'
-  local download_link_geoip="https://github.com/XTLS/Xray-rules-dat/releases/latest/download/${file_ip}"
-  local download_link_geosite="https://github.com/XTLS/Xray-rules-dat/releases/latest/download/${file_site}"
+  local download_link_geoip="https://github.com/xxf185/Xray-rules-dat/releases/latest/download/${file_ip}"
+  local download_link_geosite="https://github.com/xxf185/Xray-rules-dat/releases/latest/download/${file_site}"
   local dir_tmp
   dir_tmp="$(mktemp -d)"
   TMP_PATHS+=("$dir_tmp")
